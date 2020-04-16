@@ -37,6 +37,7 @@ type File struct {
 	regular  bool   // Remember if this is a regular file (or a pipe)
 	file     *os.File
 	partial  *bytes.Buffer
+	lock      bool  // gate to prevent watcher event from creating a race condition writing and resetting partial
 	lines    chan<- *logline.LogLine // output channel for lines read
 }
 
@@ -78,7 +79,7 @@ func NewFile(pathname string, lines chan<- *logline.LogLine, seekToStart bool) (
 	default:
 		return nil, errors.Errorf("Can't open files with mode %v: %s", m&os.ModeType, absPath)
 	}
-	return &File{pathname, absPath, regular, f, bytes.NewBufferString(""), lines}, nil
+	return &File{pathname, absPath, regular, f, bytes.NewBufferString(""), false, lines}, nil
 }
 
 func open(pathname string, seenBefore bool) (*os.File, error) {
@@ -138,9 +139,11 @@ func (f *File) Follow() error {
 		glog.V(1).Infof("Path %s already being watched, and inode not changed.",
 			f.Pathname)
 	}
-
-	glog.V(2).Info("doing the normal read")
-	return f.Read()
+	if !f.lock {
+		glog.V(2).Info("doing the normal read")
+		return f.Read()
+	}
+	return nil
 }
 
 // doRotation reads the remaining content of the currently opened file, then reopens the new one.
@@ -164,6 +167,7 @@ func (f *File) Read() error {
 	b := make([]byte, 0, 4096)
 	totalBytes := 0
 	for {
+		f.lock = true
 		if err := f.file.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 			glog.Info(err)
 		}
@@ -199,7 +203,7 @@ func (f *File) Read() error {
 				f.sendLine()
 			}
 		}
-
+		f.lock = false
 		// Return on any error, including EOF.
 		if err != nil {
 			return err
