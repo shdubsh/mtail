@@ -190,13 +190,18 @@ func (w *LogWatcher) Add(path string, handle int) error {
 	if err != nil {
 		return errors.Wrapf(err, "Failed to lookup absolutepath of %q", path)
 	}
-	glog.V(2).Infof("Adding a watch on resolved path %q", absPath)
-	err = w.watcher.Add(absPath)
-	if err != nil {
-		if os.IsPermission(err) {
-			glog.V(2).Infof("Skipping permission denied error on adding a watch.")
-		} else {
-			return errors.Wrapf(err, "Failed to create a new watch on %q", absPath)
+	// avoid setting watches on /dev.
+	if absPath == "/dev" {
+		glog.V(2).Info("Skipping adding watch on /dev")
+	} else {
+		glog.V(2).Infof("Adding a watch on resolved path %q", absPath)
+		err = w.watcher.Add(absPath)
+		if err != nil {
+			if os.IsPermission(err) {
+				glog.V(2).Infof("Skipping permission denied error on adding a watch.")
+			} else {
+				return errors.Wrapf(err, "Failed to create a new watch on %q", absPath)
+			}
 		}
 	}
 	w.watchedMu.Lock()
