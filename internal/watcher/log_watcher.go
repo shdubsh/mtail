@@ -247,8 +247,11 @@ func (w *LogWatcher) Add(path string, handle int) error {
 	if err != nil {
 		return errors.Wrapf(err, "Failed to lookup absolutepath of %q", path)
 	}
-	glog.V(2).Infof("Adding a watch on resolved path %q", absPath)
-	if w.watcher != nil {
+	// avoid setting watches on /dev.
+	if absPath == "/dev" {
+		glog.V(2).Info("Skipping adding watch on /dev")
+	} else {
+		glog.V(2).Infof("Adding a watch on resolved path %q", absPath)
 		err = w.watcher.Add(absPath)
 		if err != nil {
 			if os.IsPermission(err) {
